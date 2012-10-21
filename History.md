@@ -1,4 +1,42 @@
 
+0.3.7 / 2012-10-21
+==================
+
+  * package: bumped `engine.io-client`
+
+0.3.6 / 2012-10-21
+==================
+
+  [skipped]
+
+0.3.5 / 2012-10-14
+==================
+
+  * package: reverted last commit - we use the parser from the client
+
+0.3.4 / 2012-10-14
+==================
+
+  * package: `engine.io-client` moved to `devDependencies`
+  * socket: added missing jsdoc
+
+0.3.3 / 2012-10-10
+==================
+
+  * socket: fixed check interval clearing [joewalnes]
+  * transports: improved instrumentation
+
+0.3.2 / 2012-10-08
+==================
+
+  * socket: improve check interval for upgrade
+
+0.3.1 / 2012-10-08
+==================
+
+  * socket: faster upgrades (we perform a check immediately)
+  * server: don't assume sid is numeric
+
 0.3.0 / 2012-10-04
 ==================
 

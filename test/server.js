@@ -224,7 +224,7 @@ describe('server', function () {
     });
 
     it('should trigger on client if server does not meet ping timeout', function (done) {
-      var opts = { allowUpgrades: false, pingInterval: 5, pingTimeout: 5 };
+      var opts = { allowUpgrades: false, pingInterval: 50, pingTimeout: 30 };
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('ws://localhost:%d'.s(port));
         socket.on('open', function () {
@@ -374,52 +374,76 @@ describe('server', function () {
       });
     });
 
-    it('should trigger if a poll request is ongoing and the underlying' +
-      ' socket closes, as in a browser tab close', function (done) {
+    it('should trigger if a poll request is ongoing and the underlying ' +
+       'socket closes, as in a browser tab close', function ($done) {
       var engine = listen({ allowUpgrades: false }, function (port) {
+        // hack to access the sockets created by node-xmlhttprequest
+        // see: https://github.com/driverdan/node-XMLHttpRequest/issues/44
+        var request = require('http').request;
+        var sockets = [];
+        http.request = function(opts){
+          var req = request.apply(null, arguments);
+          req.on('socket', function(socket){
+            sockets.push(socket);
+          });
+          return req;
+        };
+
+        function done(){
+          http.request = request;
+          $done();
+        }
+
         var socket = new eioc.Socket('ws://localhost:%d'.s(port))
           , serverSocket;
 
-        engine.on('connection', function(socket){
-          serverSocket = socket;
+        engine.on('connection', function(s){
+          serverSocket = s;
         });
 
         socket.transport.on('poll', function(){
-          // at this time server's `connection` should have been fired
-          expect(serverSocket).to.be.an('object');
+          // we set a timer to wait for the request to actually reach
+          setTimeout(function(){
+            // at this time server's `connection` should have been fired
+            expect(serverSocket).to.be.an('object');
 
-          // OPENED readyState is expected - we qre actually polling
-          expect(socket.transport.pollXhr.xhr.readyState).to.be(1);
+            // OPENED readyState is expected - we qre actually polling
+            expect(socket.transport.pollXhr.xhr.readyState).to.be(1);
 
-          // 2 requests sent to the server over an unique port means
-          // we should have been assigned 2 sockets
-          var sockets = http.globalAgent.sockets['localhost:%d'.s(port)];
-          expect(sockets.length).to.be(2);
+            // 2 requests sent to the server over an unique port means
+            // we should have been assigned 2 sockets
+            expect(sockets.length).to.be(2);
 
-          // expect the socket to be open at this point
-          expect(serverSocket.readyState).to.be('open');
+            // expect the socket to be open at this point
+            expect(serverSocket.readyState).to.be('open');
 
-          // kill the underlying connection
-          serverSocket.on('close', function(reason, err){
-            expect(reason).to.be('transport error');
-            expect(err.message).to.be('poll connection closed prematurely');
-            done();
-          });
-          sockets[1].end();
+            // kill the underlying connection
+            sockets[1].end();
+            serverSocket.on('close', function(reason, err){
+              expect(reason).to.be('transport error');
+              expect(err.message).to.be('poll connection closed prematurely');
+              done();
+            });
+          }, 50);
         });
       });
     });
 
-    it('should not trigger with connection: close header', function(done){
+    it('should not trigger with connection: close header', function($done){
       var engine = listen({ allowUpgrades: false }, function(port){
         // intercept requests to add connection: close
-        var oldRequest = http.request;
+        var request = http.request;
         http.request = function(){
           var opts = arguments[0];
           opts.headers = opts.headers || {};
           opts.headers.Connection = 'close';
-          return oldRequest.apply(this, arguments);
+          return request.apply(this, arguments);
         };
+
+        function done(){
+          http.request = request;
+          $done();
+        }
 
         engine.on('connection', function(socket){
           socket.on('message', function(msg){
@@ -434,14 +458,15 @@ describe('server', function () {
         });
         socket.on('message', function(msg){
           expect(msg).to.be('woot');
-          http.request = oldRequest;
           done();
         });
       });
     });
 
-    it('should not trigger early with connection `ping timeout` after post handshake timeout', function (done) {
-      // First timeout should trigger after `pingInterval + pingTimeout`, not just `pingTimeout`.
+    it('should not trigger early with connection `ping timeout`' +
+       'after post handshake timeout', function (done) {
+      // first timeout should trigger after `pingInterval + pingTimeout`,
+      // not just `pingTimeout`.
       var opts = { allowUpgrades: false, pingInterval: 300, pingTimeout: 100 };
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('ws://localhost:%d'.s(port));
@@ -463,9 +488,11 @@ describe('server', function () {
       });
     });
 
-    it('should not trigger early with connection `ping timeout` after post ping timeout', function (done) {
-      // Ping timeout should trigger after `pingInterval + pingTimeout`, not just `pingTimeout`.
-      var opts = { allowUpgrades: false, pingInterval: 300, pingTimeout: 100 };
+    it('should not trigger early with connection `ping timeout` ' +
+       'after post ping timeout', function (done) {
+      // ping timeout should trigger after `pingInterval + pingTimeout`,
+      // not just `pingTimeout`.
+      var opts = { allowUpgrades: false, pingInterval: 80, pingTimeout: 50 };
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('ws://localhost:%d'.s(port));
         var clientCloseReason = null;
@@ -485,13 +512,15 @@ describe('server', function () {
         setTimeout(function() {
           expect(clientCloseReason).to.be(null);
           done();
-        }, 300);
+        }, 100);
       });
     });
 
-    it('should trigger early with connection `transport close` after missing pong', function (done) {
-      // Ping timeout should trigger after `pingInterval + pingTimeout`, not just `pingTimeout`.
-      var opts = { allowUpgrades: false, pingInterval: 300, pingTimeout: 100 };
+    it('should trigger early with connection `transport close` ' +
+       'after missing pong', function (done) {
+      // ping timeout should trigger after `pingInterval + pingTimeout`,
+      // not just `pingTimeout`.
+      var opts = { allowUpgrades: false, pingInterval: 80, pingTimeout: 50 };
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('ws://localhost:%d'.s(port));
         var clientCloseReason = null;
@@ -508,15 +537,16 @@ describe('server', function () {
               conn.close();
             }, 20);
             setTimeout(function() {
-              expect(clientCloseReason).to.be("transport close");
+              expect(clientCloseReason).to.be('transport close');
               done();
-            }, 150);
+            }, 100);
           });
         });
       });
     });
 
-    it('should trigger with connection `ping timeout` after `pingInterval + pingTimeout`', function (done) {
+    it('should trigger with connection `ping timeout` ' +
+       'after `pingInterval + pingTimeout`', function (done) {
       var opts = { allowUpgrades: false, pingInterval: 30, pingTimeout: 10 };
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('ws://localhost:%d'.s(port));
@@ -697,6 +727,41 @@ describe('server', function () {
         });
 
         new eioc.Socket('ws://localhost:%d'.s(port));
+      });
+    });
+
+    it('should interleave with pongs if many messages buffered ' +
+       'after connection open', function (done) {
+      this.slow(4000);
+      this.timeout(8000);
+
+      var opts = {
+        transports: ['websocket'],
+        pingInterval: 200,
+        pingTimeout: 100
+      };
+
+      var engine = listen(opts, function (port) {
+        var messageCount = 100;
+        var messagePayload = new Array(1024 * 1024 * 1).join('a');
+        var connection = null;
+        engine.on('connection', function (conn) {
+          connection = conn;
+        });
+        var socket = new eioc.Socket('ws://localhost:%d'.s(port), { transports: ['websocket'] });
+        socket.on('open', function () {
+          for (var i=0;i<messageCount;i++) {
+//            connection.send('message: ' + i);   // works
+            connection.send(messagePayload + '|message: ' + i);   // does not work
+          }
+          var receivedCount = 0;
+          socket.on('message', function (msg) {
+            receivedCount += 1;
+            if (receivedCount === messageCount) {
+              done();
+            }
+          });
+        });
       });
     });
   });
