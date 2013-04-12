@@ -118,6 +118,23 @@ describe('server', function () {
       });
     });
 
+    it('should exchange custom data with the handshake', function (done) {
+      var engine = listen({ allowUpgrades: false }, function (port) {
+        var socket = new eioc.Socket('ws://localhost:%d'.s(port));
+        socket.on('handshake', function (obj) {
+          expect(obj.sid).to.be.a('string');
+          expect(obj.pingTimeout).to.be.a('number');
+          expect(obj.upgrades).to.be.an('array');
+          expect(obj.foo).to.equal('bar');
+          done();
+        });
+      });
+
+      engine.onOpen = function onOpen(socket, fn) {
+        fn(undefined, { foo: 'bar' });
+      };
+    });
+
     it('should allow custom ping timeouts', function (done) {
       var engine = listen({ allowUpgrades: false, pingTimeout: 123 }, function (port) {
         var socket = new eioc.Socket('http://localhost:%d'.s(port));
@@ -263,7 +280,7 @@ describe('server', function () {
       var opts = {allowUpgrades: false};
       var engine = listen(opts, function (port) {
         var socket = new eioc.Socket('http://localhost:%d'.s(port));
-        socket.on('open', function() {          
+        socket.on('open', function() {
           socket.on('close', function (reason) {
             expect(socket.writeBuffer.length).to.be(1);
             expect(socket.callbackBuffer.length).to.be(1);
