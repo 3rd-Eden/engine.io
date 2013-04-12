@@ -8,7 +8,6 @@ test:
 		--require test/common \
 		--reporter $(REPORTER) \
 		--slow 500ms \
-		--bail \
 		$(TESTS)
 
 test-cov: lib-cov

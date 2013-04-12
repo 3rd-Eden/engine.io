@@ -997,4 +997,37 @@ describe('server', function () {
     });
   });
 
+  describe('pipe', function () {
+    var fs = require('fs');
+
+    it('should recieve piped data', function (done) {
+      var engine = listen(function (port) {
+        engine.on('connection', function (conn) {
+          var stream = fs.createReadStream(__filename);
+
+          stream.on('data', function (data) {
+            console.log(data.toString());
+          });
+
+          stream.pipe(conn);
+        });
+
+        var socket = new eioc.Socket('ws://localhost:%d'.s(port));
+
+        var contents = '';
+        socket.on('message', function () {
+          console.log('i can haz messages');
+        });
+
+        socket.onmessage = function (data) {
+          contents += data.data;
+        };
+
+        socket.onclose = function () {
+          //expect(contents).to.equal(fs.readFileSync(__filename, 'utf8'));
+          done();
+        };
+      });
+    });
+  });
 });
